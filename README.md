@@ -71,7 +71,7 @@ graph TD
     LS -.->|性能分析| R
 ```
 
-![graph](.\examples\graph.png)
+![Architecture graph](examples/graph.png)
 
 ## 📁 项目结构
 

@@ -71,7 +71,7 @@ graph TD
     LS -.->|性能分析| R
 ```
 
-![image-20250912175418221](C:\Users\ml\AppData\Roaming\Typora\typora-user-images\image-20250912175418221.png)
+![graph](.\examples\graph.png)
 
 ## 📁 项目结构
 
@@ -150,7 +150,7 @@ MODELSCOPE_TOKEN=your_api_key
 
 ## 💻 使用方法
 
-### Method 1: 命令行界面
+### 方法一: 命令行界面
 
 运行主应用：
 ```bash
@@ -166,7 +166,7 @@ python -m src.main
 6. 等待研究完成
 7. 查看LangSmith追踪链接以获取详细的执行分析
 
-### 方法二：Jupyter Notebook
+### 方法二: Jupyter Notebook
 
 ```bash
 jupyter notebook notebooks/research_assistant.ipynb

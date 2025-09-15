@@ -1,0 +1,42 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	create_analysts(create_analysts)
+	human_feedback(human_feedback<hr/><small><em>__interrupt = before</em></small>)
+	write_report(write_report)
+	write_introduction(write_introduction)
+	write_conclusion(write_conclusion)
+	finalize_report(finalize_report)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> create_analysts;
+	conduct_interview_write_section --> write_conclusion;
+	conduct_interview_write_section --> write_introduction;
+	conduct_interview_write_section --> write_report;
+	create_analysts --> human_feedback;
+	human_feedback -.-> conduct_interview___start__;
+	human_feedback -.-> create_analysts;
+	write_conclusion --> finalize_report;
+	write_introduction --> finalize_report;
+	write_report --> finalize_report;
+	finalize_report --> __end__;
+	subgraph conduct_interview
+	conduct_interview___start__(<p>__start__</p>)
+	conduct_interview_ask_question(ask_question)
+	conduct_interview_search_both(search_both)
+	conduct_interview_answer_question(answer_question)
+	conduct_interview_save_interview(save_interview)
+	conduct_interview_write_section(write_section)
+	conduct_interview___start__ --> conduct_interview_ask_question;
+	conduct_interview_answer_question -.-> conduct_interview_ask_question;
+	conduct_interview_answer_question -.-> conduct_interview_save_interview;
+	conduct_interview_ask_question --> conduct_interview_search_both;
+	conduct_interview_save_interview --> conduct_interview_write_section;
+	conduct_interview_search_both --> conduct_interview_answer_question;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

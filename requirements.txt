@@ -1,0 +1,12 @@
+python-dotenv
+langgraph==0.6.6
+langchain-core
+langchain-openai
+langchain-community
+langchain-google-community
+tavily-python
+google-api-python-client
+pydantic>=2
+typing-extensions
+ipython
+requests

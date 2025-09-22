@@ -79,6 +79,8 @@ graph TD
 ```
 multi-perspective-research/
 ├── src/                        # 核心应用模块
+│   ├─servers
+│   │  └─web_search_server.py  # MCP tools
 │   ├── __init__.py            
 │   ├── config.py              # 环境和LLM配置
 │   ├── models.py              # Pydantic模型和类型定义

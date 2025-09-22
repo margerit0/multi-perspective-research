@@ -1,8 +1,10 @@
-import json
-import re
+import json, re, asyncio, ast, html
 from typing import Any, Dict
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, BaseMessage
+from langchain_mcp_tools import convert_mcp_to_langchain_tools
+from src.config import MCP_WEB_URL
+import asyncio, atexit, inspect
 
 def _invoke_stream_collect_text(chat_model, msgs) -> str:
     """收集流式响应的文本"""
@@ -124,3 +126,111 @@ def _last_analyst_question(messages):
         if isinstance(m, HumanMessage) and getattr(m, "name", "") == "analyst":
             return m.content
     return ""
+
+# === MCP 工具连接与缓存 ===
+#
+_mcp_tools_cache: Dict[str, Any] = {"tools": None, "cleanup": None}
+async def _ensure_mcp_tools():
+    if _mcp_tools_cache["tools"] is None:
+        tools, cleanup = await convert_mcp_to_langchain_tools({
+            "web-search": {"type": "http", "url": MCP_WEB_URL}
+        })
+        _mcp_tools_cache["tools"], _mcp_tools_cache["cleanup"] = tools, cleanup
+    return _mcp_tools_cache["tools"]
+
+def _cleanup_mcp_tools_at_exit():
+    cleanup = _mcp_tools_cache.get("cleanup")
+    if not cleanup:
+        return
+    try:
+        res = cleanup()
+        # 兼容 cleanup 可能是异步/同步的两种实现
+        if inspect.isawaitable(res):
+            loop = _get_persistent_loop()
+            loop.run_until_complete(res)
+    except Exception:
+        # 退出时尽量静默
+        pass
+
+atexit.register(_cleanup_mcp_tools_at_exit)
+
+# === MCP 响应格式化与事件循环兜底 ===
+#
+def _as_dict(obj: Any) -> dict:
+    if isinstance(obj, dict):
+        return obj
+    content = getattr(obj, "content", None)
+    if isinstance(content, (str, bytes)):
+        try:
+            return json.loads(content if isinstance(content, str) else content.decode())
+        except Exception:
+            try:
+                return ast.literal_eval(content if isinstance(content, str) else content.decode())
+            except Exception:
+                return {}
+    if isinstance(obj, (str, bytes)):
+        s = obj if isinstance(obj, str) else obj.decode()
+        try:
+            return json.loads(s)
+        except Exception:
+            try:
+                return ast.literal_eval(s)
+            except Exception:
+                return {}
+    try:
+        return dict(obj)
+    except Exception:
+        return {}
+
+def _format_blocks_from_mcp(resp) -> list[str]:
+    data = _as_dict(resp)
+    results = data.get("results") or []
+    if isinstance(results, (str, bytes)):
+        results = _as_dict(results).get("results", [])
+    blocks: list[str] = []
+    for r in results:
+        rd = _as_dict(r)
+        url = (rd.get("url") or "").strip()
+        title = (rd.get("title") or "").strip()
+        snippet = (rd.get("snippet") or "").strip()
+        url_e = html.escape(url, quote=True)
+        title_e = html.escape(title, quote=True)
+        blocks.append(f'<Document origin="mcp:web" href="{url_e}" title="{title_e}"/>{snippet}</Document>')
+    # 按 href 去重
+    seen, uniq = set(), []
+    for b in blocks:
+        start = b.find('href="') + 6
+        end = b.find('"', start)
+        url = b[start:end] if start > 5 and end > start else b
+        if url and url not in seen:
+            uniq.append(b)
+            seen.add(url)
+    return uniq
+
+
+# 持久事件循环（避免每次调用都新建/销毁 loop）
+_persistent_loop: asyncio.AbstractEventLoop | None = None
+
+def _get_persistent_loop() -> asyncio.AbstractEventLoop:
+    global _persistent_loop
+    # 如果当前线程已有 loop 且在运行（如 Jupyter），就复用它
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        try:
+            import nest_asyncio  # 可选：pip install nest_asyncio
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        return loop
+    # 否则创建一个持久 loop 并复用
+    if _persistent_loop is None or _persistent_loop.is_closed():
+        _persistent_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_persistent_loop)
+    return _persistent_loop
+
+def _run_async(coro):
+    loop = _get_persistent_loop()
+    return loop.run_until_complete(coro)

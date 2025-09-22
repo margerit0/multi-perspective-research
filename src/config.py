@@ -32,3 +32,6 @@ google_search = GoogleSearchAPIWrapper(
     google_cse_id=os.environ["GOOGLE_CSE_ID"],
     k=3,
 )
+
+# MCP
+MCP_WEB_URL = os.getenv("MCP_WEB_URL", "http://127.0.0.1:8765/mcp")

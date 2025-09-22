@@ -20,7 +20,8 @@ from src.prompts import (
 from src.tools import (
     _invoke_stream_collect_text, _extract_query_text_strict,
     _heuristic_query_from_last_question, _sanitize_query, _format_docs,
-    _google_to_docs, _numbered_context, _last_analyst_question
+    _google_to_docs, _numbered_context, _last_analyst_question, _to_messages,
+    _ensure_mcp_tools, _format_blocks_from_mcp, _run_async
 )
 
 # ===== Analyst Generation Nodes =====
@@ -93,34 +94,38 @@ def generate_question(state: Dict[str, Any]):
     question_msg = HumanMessage(content=text, name="analyst")
     return {"messages": [question_msg]}
 
-def search_both(state: InterviewState):
-    last_q = _last_analyst_question(state.get("messages", [])) or ""
-    msgs = [search_instructions, HumanMessage(content=last_q)]
+# 异步实现：保持你之前的逻辑
+async def _search_both_async(state: InterviewState):
+    # 兼容传入的 messages 里含普通字符串
+    raw_msgs = state.get("messages", [])
+    try:
+        messages = _to_messages(raw_msgs)  # 你已有这个工具函数
+    except Exception:
+        messages = raw_msgs if isinstance(raw_msgs, list) else []
 
+    last_q = _last_analyst_question(messages) or ""
+    msgs = [search_instructions, HumanMessage(content=last_q)]
     resp = llm.invoke(msgs)
     raw = getattr(resp, "content", resp)
-
-    search_query = _extract_query_text_strict(raw) or ""
-    if not search_query:
-        last_q = _last_analyst_question(state.get("messages", [])) or ""
-        search_query = _heuristic_query_from_last_question(last_q)
-
+    search_query = _extract_query_text_strict(raw) or _heuristic_query_from_last_question(last_q)
     search_query = _sanitize_query(search_query, limit_words=15)
+    if not search_query:
+        return {"context": []}
 
-    web_docs = tavily_retriever.invoke(search_query) if search_query else []
-    google_docs = _google_to_docs(search_query) if search_query else []
-    blocks = _format_docs(web_docs, "tavily") + _format_docs(google_docs, "google")
+    tools = await _ensure_mcp_tools()
+    web_search_tool = next(
+        (t for t in tools if getattr(t, "name", "").endswith("web_search") or getattr(t, "name", "") == "web_search"),
+        None)
+    if web_search_tool is None:
+        raise RuntimeError("web_search tool not found from MCP registry")
+    result = await web_search_tool.ainvoke({"query": search_query, "k": 3, "engines": ["tavily", "google"]})
 
-    seen, uniq = set(), []
-    for b in blocks:
-        start = b.find('href="') + 6
-        end = b.find('"', start)
-        url = b[start:end] if start > 5 and end > start else b
-        if url and url not in seen:
-            uniq.append(b)
-            seen.add(url)
+    blocks = _format_blocks_from_mcp(result)
+    return {"context": blocks}
 
-    return {"context": uniq}
+# 同步节点：供 LangGraph 的同步执行路径调用
+def search_both(state: InterviewState):
+    return _run_async(_search_both_async(state))
 
 def generate_answer(state: InterviewState):
     analyst = state["analyst"]
